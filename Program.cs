@@ -9,6 +9,8 @@ using DotNetEnv;
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://0.0.0.0:8080");
 
+Env.Load();
+
 // 1. RabbitMQ Konfiguration auslesen
 var rabbitHost = builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq";
 var rabbitUser = builder.Configuration["RabbitMQ:Username"] ?? "admin";
