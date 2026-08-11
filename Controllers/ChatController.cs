@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Gateway.Services;
 using Chat.Contracts.Events;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Gateway.Controllers;
 
@@ -19,12 +20,24 @@ public class ChatController : ControllerBase
     public async Task<IActionResult> SendMessage([FromBody] ChatMessageRequest request)
     {
         await _chatManagerService.ProcessAndSendAsync(
-            request.SenderId, 
-            request.TargetId, 
+            request.SenderId,
+            request.TargetId,
             request.Text
         );
 
         return Ok(new { Status = "Success", Info = "Message successfully sent to RabbitMQ!" });
+    }
+
+    [HttpGet("/health")]
+    [AllowAnonymous] // Stellt sicher, dass /health immer ohne Authentifizierung erreichbar ist
+    public IActionResult HealthCheck()
+    {
+        return Ok(new
+        {
+            Status = "Healthy",
+            Service = "API-Gateway",
+            Timestamp = DateTime.UtcNow
+        });
     }
 }
 

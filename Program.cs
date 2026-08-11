@@ -86,14 +86,6 @@ builder.Services.AddReverseProxy()
 
 var app = builder.Build();
 
-// Später in Service umbauen
-app.MapGet("/health", () => Results.Ok(new
-{
-    Status = "Healthy",
-    Service = "API-Gateway",
-    Timestamp = DateTime.UtcNow
-}));
-
 app.UseAuthentication();
 app.UseAuthorization();
 
