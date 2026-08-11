@@ -86,10 +86,18 @@ builder.Services.AddReverseProxy()
 
 var app = builder.Build();
 
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Chat Gateway API v1");
+    });
+}
+
 app.UseAuthentication();
 app.UseAuthorization();
 
-// ... Rest wie gehabt ...
 app.MapControllers();
 app.MapReverseProxy();
 
