@@ -1,5 +1,10 @@
 using MassTransit;
 using Gateway.Services;
+using Microsoft.OpenApi.Models;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using System.Text;
+using DotNetEnv;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://0.0.0.0:8080");
@@ -11,11 +16,53 @@ var rabbitPass = builder.Configuration["RabbitMQ:Password"] ?? "secret";
 
 // 2. Services registrieren
 builder.Services.AddControllers();
+builder.Services.AddScoped<IChatManagerService, ChatManagerService>();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = "Chat Gateway API", Version = "v1" });
+    c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Description = "JWT Authorization header using the Bearer scheme. Example: \"Authorization: Bearer {token}\"",
+        Name = "Authorization",
+        In = ParameterLocation.Header,
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
+    });
 
-// --- WICHTIG: MassTransit MUSS VOR deinem Service registriert werden, 
-// damit IPublishEndpoint für den DI-Container bekannt ist! ---
+    c.AddSecurityRequirement(new OpenApiSecurityRequirement
+    {
+        {
+            new OpenApiSecurityScheme
+            {
+                Reference = new OpenApiReference
+                {
+                    Type = ReferenceType.SecurityScheme,
+                    Id = "Bearer"
+                }
+            },
+            Array.Empty<string>()
+        }
+    });
+});
+
+var supabaseJwtSecret = Environment.GetEnvironmentVariable("JWT_KEY") ?? throw new Exception("JWT is emtpy check .env!");
+var supabaseUrl = "https://svjwdxhozkulzgxxyzce.supabase.co";
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(supabaseJwtSecret)),
+            ValidAudience = "authenticated",
+            ValidIssuer = supabaseUrl,
+            ValidateLifetime = true
+        };
+    });
+builder.Services.AddAuthorization();
+
 
 builder.Services.AddMassTransit(x =>
 {
@@ -26,14 +73,10 @@ builder.Services.AddMassTransit(x =>
             h.Username(rabbitUser);
             h.Password(rabbitPass);
         });
-        
+
         cfg.ConfigureEndpoints(context);
     });
 });
-
-// --- Dependency Injection ---
-// Scoped ist hier korrekt, da IPublishEndpoint einen Scope erfordert
-builder.Services.AddScoped<IChatManagerService, ChatManagerService>();
 
 // 3. YARP Reverse Proxy
 builder.Services.AddReverseProxy()
@@ -42,12 +85,15 @@ builder.Services.AddReverseProxy()
 var app = builder.Build();
 
 // Später in Service umbauen
-app.MapGet("/health", () => Results.Ok(new 
-{ 
-    Status = "Healthy", 
-    Service = "API-Gateway", 
-    Timestamp = DateTime.UtcNow 
+app.MapGet("/health", () => Results.Ok(new
+{
+    Status = "Healthy",
+    Service = "API-Gateway",
+    Timestamp = DateTime.UtcNow
 }));
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 // ... Rest wie gehabt ...
 app.MapControllers();
