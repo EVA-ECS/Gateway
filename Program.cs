@@ -6,6 +6,7 @@ using Microsoft.IdentityModel.Tokens;
 using DotNetEnv;
 using Chat.Contracts.Events;
 using RabbitMQ.Client;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://0.0.0.0:8080");
@@ -16,14 +17,30 @@ Env.Load();
 var rabbitHost = builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq";
 var rabbitUser = builder.Configuration["RabbitMQ:Username"] ?? "admin";
 var rabbitPass = builder.Configuration["RabbitMQ:Password"] ?? "secret";
+var redisConnectionString = builder.Configuration["Redis:ConnectionString"] ?? "redis:6379";
 
 // 2. Services registrieren
 builder.Services.AddControllers();
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins(
+                "http://localhost:8081",
+                "http://127.0.0.1:8081"
+            )
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
 builder.Services.AddScoped<IChatManagerService, ChatManagerService>();
-builder.Services.AddScoped<IWebSocketSessionStore, RedisWebSocketSessionStore>();
+builder.Services.AddScoped<IUserPresenceStore, RedisUserPresenceStore>();
+builder.Services.AddSingleton<IConnectionMultiplexer>(
+    ConnectionMultiplexer.Connect(redisConnectionString)
+);
 builder.Services.AddStackExchangeRedisCache(options =>
 {
-    options.Configuration = builder.Configuration["Redis:ConnectionString"] ?? "redis:6379";
+    options.Configuration = redisConnectionString;
     options.InstanceName = "eva-chat:";
 });
 builder.Services.AddEndpointsApiExplorer();
@@ -140,6 +157,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseWebSockets();
 
+app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
 

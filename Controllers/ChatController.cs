@@ -14,15 +14,15 @@ namespace Gateway.Controllers;
 public class ChatController : ControllerBase
 {
     private readonly IChatManagerService _chatManagerService;
-    private readonly IWebSocketSessionStore _sessionStore;
+    private readonly IUserPresenceStore _presenceStore;
 
     public ChatController(
         IChatManagerService chatManagerService,
-        IWebSocketSessionStore sessionStore
+        IUserPresenceStore presenceStore
     )
     {
         _chatManagerService = chatManagerService;
-        _sessionStore = sessionStore;
+        _presenceStore = presenceStore;
     }
 
     [HttpPost]
@@ -45,6 +45,25 @@ public class ChatController : ControllerBase
         return Ok(new { Status = "Success", Info = "Message successfully sent to RabbitMQ!" });
     }
 
+    [HttpGet("/api/users")]
+    [Authorize]
+    public async Task<IActionResult> GetUsers()
+    {
+        var currentUserId = GetAuthenticatedUserId();
+
+        if (string.IsNullOrWhiteSpace(currentUserId))
+        {
+            return Unauthorized();
+        }
+
+        var users = await _presenceStore.GetUsersAsync(
+            currentUserId,
+            HttpContext.RequestAborted
+        );
+
+        return Ok(users);
+    }
+
     [HttpGet("/ws")]
     [Authorize]
     public async Task ConnectWebSocket()
@@ -64,8 +83,16 @@ public class ChatController : ControllerBase
             return;
         }
 
+        var displayName = User.FindFirst(ClaimTypes.Email)?.Value
+            ?? User.FindFirst("email")?.Value
+            ?? senderId;
+
         using var socket = await HttpContext.WebSockets.AcceptWebSocketAsync();
-        await _sessionStore.SetConnectedAsync(senderId, HttpContext.RequestAborted);
+        await _presenceStore.SetOnlineAsync(
+            senderId,
+            displayName,
+            HttpContext.RequestAborted
+        );
         Console.WriteLine("Authenticated WebSocket connection accepted.");
         var buffer = new byte[16 * 1024];
 
@@ -96,17 +123,26 @@ public class ChatController : ControllerBase
                 }
 
                 var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                WebSocketChatMessage? request;
+                WebSocketClientMessage? request;
 
                 try
                 {
-                    request = JsonSerializer.Deserialize<WebSocketChatMessage>(
+                    request = JsonSerializer.Deserialize<WebSocketClientMessage>(
                         json,
                         new JsonSerializerOptions(JsonSerializerDefaults.Web)
                     );
                 }
                 catch (JsonException)
                 {
+                    continue;
+                }
+
+                if (request?.Type == "presence.heartbeat")
+                {
+                    await _presenceStore.RefreshAsync(
+                        senderId,
+                        HttpContext.RequestAborted
+                    );
                     continue;
                 }
 
@@ -141,12 +177,12 @@ public class ChatController : ControllerBase
         }
         catch (WebSocketException)
         {
-            // Ein Verbindungsabbruch ist kein Gateway-Fehler.
+            //Verbindungsabbruch ist kein Gateway-Fehler.
         }
         finally
         {
-            await _sessionStore.RemoveAsync(senderId, CancellationToken.None);
-            Console.WriteLine("WebSocket connection closed.");
+            // Der kurze Redis-Timeout setzt den Nutzer automatisch offline.
+            Console.WriteLine("WebSocket connection closed; presence expires automatically.");
         }
     }
 
@@ -187,4 +223,4 @@ public class ChatController : ControllerBase
 }
 
 public record ChatMessageRequest(string SenderId, string TargetId, string Text);
-public record WebSocketChatMessage(string TargetId, string Text);
+public record WebSocketClientMessage(string? Type, string? TargetId, string? Text);
