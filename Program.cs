@@ -3,15 +3,12 @@ using Gateway.Services;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using DotNetEnv;
 using Chat.Contracts.Events;
 using RabbitMQ.Client;
 using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseUrls("http://0.0.0.0:8080");
-
-Env.Load();
 
 // 1. RabbitMQ Konfiguration auslesen
 var rabbitHost = builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq";
@@ -72,7 +69,6 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-var supabaseJwtSecret = Environment.GetEnvironmentVariable("JWT_KEY") ?? throw new Exception("JWT is emtpy check .env!");
 var supabaseUrl = "https://svjwdxhozkulzgxxyzce.supabase.co";
 var supabaseIssuer = $"{supabaseUrl}/auth/v1";
 
