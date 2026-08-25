@@ -16,8 +16,27 @@ var rabbitUser = builder.Configuration["RabbitMQ:Username"] ?? "admin";
 var rabbitPass = builder.Configuration["RabbitMQ:Password"] ?? "secret";
 var redisConnectionString = builder.Configuration["Redis:ConnectionString"] ?? "redis:6379";
 
+var supabaseUrl = builder.Configuration["Supabase:Url"]?.TrimEnd('/');
+
+if (string.IsNullOrWhiteSpace(supabaseUrl))
+{
+    throw new InvalidOperationException(
+        "Die Konfiguration Supabase:Url fehlt."
+    );
+}
+
+if (string.IsNullOrWhiteSpace(
+        builder.Configuration["Supabase:SecretKey"]
+    ))
+{
+    throw new InvalidOperationException(
+        "Die Konfiguration Supabase:SecretKey fehlt."
+    );
+}
+
 // 2. Services registrieren
 builder.Services.AddControllers();
+builder.Services.AddHttpClient();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -69,7 +88,6 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 
-var supabaseUrl = "https://svjwdxhozkulzgxxyzce.supabase.co";
 var supabaseIssuer = $"{supabaseUrl}/auth/v1";
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

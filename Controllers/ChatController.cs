@@ -15,14 +15,17 @@ public class ChatController : ControllerBase
 {
     private readonly IChatManagerService _chatManagerService;
     private readonly IUserPresenceStore _presenceStore;
+    private readonly ILogger<ChatController> _logger;
 
     public ChatController(
         IChatManagerService chatManagerService,
-        IUserPresenceStore presenceStore
+        IUserPresenceStore presenceStore,
+        ILogger<ChatController> logger
     )
     {
         _chatManagerService = chatManagerService;
         _presenceStore = presenceStore;
+        _logger = logger;
     }
 
     [HttpPost]
@@ -56,12 +59,32 @@ public class ChatController : ControllerBase
             return Unauthorized();
         }
 
-        var users = await _presenceStore.GetUsersAsync(
-            currentUserId,
-            HttpContext.RequestAborted
-        );
+        try
+        {
+            var users = await _presenceStore.GetUsersAsync(
+                currentUserId,
+                HttpContext.RequestAborted
+            );
 
-        return Ok(users);
+            return Ok(users);
+        }
+        catch (Exception exception)
+            when (!HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogError(
+                exception,
+                "Die Supabase-Nutzerliste konnte nicht geladen werden."
+            );
+
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new
+                {
+                    Message =
+                        "Die Nutzerliste ist momentan nicht verfügbar."
+                }
+            );
+        }
     }
 
     [HttpGet("/ws")]
@@ -83,16 +106,14 @@ public class ChatController : ControllerBase
             return;
         }
 
-        var displayName = User.FindFirst(ClaimTypes.Email)?.Value
-            ?? User.FindFirst("email")?.Value
-            ?? senderId;
+        using var socket =
+            await HttpContext.WebSockets.AcceptWebSocketAsync();
 
-        using var socket = await HttpContext.WebSockets.AcceptWebSocketAsync();
         await _presenceStore.SetOnlineAsync(
             senderId,
-            displayName,
             HttpContext.RequestAborted
         );
+
         Console.WriteLine("Authenticated WebSocket connection accepted.");
         var buffer = new byte[16 * 1024];
 
