@@ -22,6 +22,9 @@ public class ChatManagerService : IChatManagerService
             DateTime.UtcNow
         );
 
-        await _publishEndpoint.Publish(chatEvent);
+        await _publishEndpoint.Publish(chatEvent, context =>
+        {
+            context.SetRoutingKey("chat.message.published");
+        });
     }
 }

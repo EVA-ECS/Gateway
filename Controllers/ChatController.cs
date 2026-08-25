@@ -3,6 +3,9 @@ using Gateway.Services;
 using Chat.Contracts.Events;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
 
 namespace Gateway.Controllers;
 
@@ -11,22 +14,197 @@ namespace Gateway.Controllers;
 public class ChatController : ControllerBase
 {
     private readonly IChatManagerService _chatManagerService;
+    private readonly IUserPresenceStore _presenceStore;
+    private readonly ILogger<ChatController> _logger;
 
-    public ChatController(IChatManagerService chatManagerService)
+    public ChatController(
+        IChatManagerService chatManagerService,
+        IUserPresenceStore presenceStore,
+        ILogger<ChatController> logger
+    )
     {
         _chatManagerService = chatManagerService;
+        _presenceStore = presenceStore;
+        _logger = logger;
     }
 
     [HttpPost]
+    [Authorize]
     public async Task<IActionResult> SendMessage([FromBody] ChatMessageRequest request)
     {
+        var senderId = GetAuthenticatedUserId();
+
+        if (string.IsNullOrWhiteSpace(senderId))
+        {
+            return Unauthorized();
+        }
+
         await _chatManagerService.ProcessAndSendAsync(
-            request.SenderId,
+            senderId,
             request.TargetId,
             request.Text
         );
 
         return Ok(new { Status = "Success", Info = "Message successfully sent to RabbitMQ!" });
+    }
+
+    [HttpGet("/api/users")]
+    [Authorize]
+    public async Task<IActionResult> GetUsers()
+    {
+        var currentUserId = GetAuthenticatedUserId();
+
+        if (string.IsNullOrWhiteSpace(currentUserId))
+        {
+            return Unauthorized();
+        }
+
+        try
+        {
+            var users = await _presenceStore.GetUsersAsync(
+                currentUserId,
+                HttpContext.RequestAborted
+            );
+
+            return Ok(users);
+        }
+        catch (Exception exception)
+            when (!HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            _logger.LogError(
+                exception,
+                "Die Supabase-Nutzerliste konnte nicht geladen werden."
+            );
+
+            return StatusCode(
+                StatusCodes.Status503ServiceUnavailable,
+                new
+                {
+                    Message =
+                        "Die Nutzerliste ist momentan nicht verfügbar."
+                }
+            );
+        }
+    }
+
+    [HttpGet("/ws")]
+    [Authorize]
+    public async Task ConnectWebSocket()
+    {
+        if (!HttpContext.WebSockets.IsWebSocketRequest)
+        {
+            Response.StatusCode = StatusCodes.Status400BadRequest;
+            return;
+        }
+
+        // Die Sender-ID stammt ausschließlich aus dem validierten Supabase-JWT.
+        var senderId = GetAuthenticatedUserId();
+
+        if (string.IsNullOrWhiteSpace(senderId))
+        {
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return;
+        }
+
+        using var socket =
+            await HttpContext.WebSockets.AcceptWebSocketAsync();
+
+        await _presenceStore.SetOnlineAsync(
+            senderId,
+            HttpContext.RequestAborted
+        );
+
+        Console.WriteLine("Authenticated WebSocket connection accepted.");
+        var buffer = new byte[16 * 1024];
+
+        try
+        {
+            while (socket.State == WebSocketState.Open &&
+                   !HttpContext.RequestAborted.IsCancellationRequested)
+            {
+                var result = await socket.ReceiveAsync(
+                    buffer,
+                    HttpContext.RequestAborted
+                );
+
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    await socket.CloseAsync(
+                        WebSocketCloseStatus.NormalClosure,
+                        "Verbindung beendet",
+                        HttpContext.RequestAborted
+                    );
+                    break;
+                }
+
+                if (result.MessageType != WebSocketMessageType.Text ||
+                    !result.EndOfMessage)
+                {
+                    continue;
+                }
+
+                var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                WebSocketClientMessage? request;
+
+                try
+                {
+                    request = JsonSerializer.Deserialize<WebSocketClientMessage>(
+                        json,
+                        new JsonSerializerOptions(JsonSerializerDefaults.Web)
+                    );
+                }
+                catch (JsonException)
+                {
+                    continue;
+                }
+
+                if (request?.Type == "presence.heartbeat")
+                {
+                    await _presenceStore.RefreshAsync(
+                        senderId,
+                        HttpContext.RequestAborted
+                    );
+                    continue;
+                }
+
+                if (request is null ||
+                    string.IsNullOrWhiteSpace(request.TargetId) ||
+                    string.IsNullOrWhiteSpace(request.Text))
+                {
+                    continue;
+                }
+
+                await _chatManagerService.ProcessAndSendAsync(
+                    senderId,
+                    request.TargetId,
+                    request.Text
+                );
+
+                var acknowledgment = Encoding.UTF8.GetBytes(
+                    "{\"status\":\"published\"}"
+                );
+
+                await socket.SendAsync(
+                    acknowledgment,
+                    WebSocketMessageType.Text,
+                    true,
+                    HttpContext.RequestAborted
+                );
+            }
+        }
+        catch (OperationCanceledException) when (HttpContext.RequestAborted.IsCancellationRequested)
+        {
+            // Der Browser hat die Verbindung beendet.
+        }
+        catch (WebSocketException)
+        {
+            //Verbindungsabbruch ist kein Gateway-Fehler.
+        }
+        finally
+        {
+            // Der kurze Redis-Timeout setzt den Nutzer automatisch offline.
+            Console.WriteLine("WebSocket connection closed; presence expires automatically.");
+        }
     }
 
     [HttpGet("/health")]
@@ -57,6 +235,13 @@ public class ChatController : ControllerBase
             TokenInhalt = allClaims
         });
     }
+
+    private string? GetAuthenticatedUserId()
+    {
+        return User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+            ?? User.FindFirst("sub")?.Value;
+    }
 }
 
 public record ChatMessageRequest(string SenderId, string TargetId, string Text);
+public record WebSocketClientMessage(string? Type, string? TargetId, string? Text);
