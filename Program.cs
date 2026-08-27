@@ -1,9 +1,10 @@
 using MassTransit;
+using Gateway.Configuration;
 using Gateway.Services;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
-using Chat.Contracts.Events;
+using EVA_ECS.Chat.Contracts.Events;
 using RabbitMQ.Client;
 using StackExchange.Redis;
 
@@ -41,9 +42,47 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddScoped<IChatManagerService, ChatManagerService>();
 builder.Services.AddScoped<IUserPresenceStore, RedisUserPresenceStore>();
-builder.Services.AddSingleton<IConnectionMultiplexer>(
-    ConnectionMultiplexer.Connect(redisConnectionString)
-);
+builder.Services.AddSingleton<IWebSocketConnectionRegistry, WebSocketConnectionRegistry>();
+builder.Services.AddHostedService<RedisDeliverySubscriber>();
+
+builder.Services.AddOptions<GatewayOptions>()
+    .Bind(builder.Configuration.GetSection(GatewayOptions.SectionName))
+    .PostConfigure(options =>
+    {
+        if (string.IsNullOrWhiteSpace(options.Id))
+        {
+            options.Id = Environment.GetEnvironmentVariable("HOSTNAME")
+                ?? Environment.MachineName;
+        }
+    })
+    .Validate(options => !string.IsNullOrWhiteSpace(options.Id),
+        "Gateway:Id is required.")
+    .Validate(options => options.PresenceTtlSeconds > 0,
+        "Gateway:PresenceTtlSeconds must be greater than zero.")
+    .ValidateOnStart();
+
+builder.Services.AddOptions<RedisRoutingOptions>()
+    .Bind(builder.Configuration.GetSection(RedisRoutingOptions.SectionName))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString),
+        "Redis:ConnectionString is required.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.PresenceKeyPrefix),
+        "Redis:PresenceKeyPrefix is required.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.GatewayMappingKeyPrefix),
+        "Redis:GatewayMappingKeyPrefix is required.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.DeliveryChannelPrefix),
+        "Redis:DeliveryChannelPrefix is required.")
+    .ValidateOnStart();
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
+{
+    var gatewayOptions = serviceProvider
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<GatewayOptions>>()
+        .Value;
+    var configuration = ConfigurationOptions.Parse(redisConnectionString);
+    configuration.AbortOnConnectFail = false;
+    configuration.ClientName = $"gateway-{gatewayOptions.Id}";
+    return ConnectionMultiplexer.Connect(configuration);
+});
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = redisConnectionString;
@@ -135,7 +174,12 @@ builder.Services.AddMassTransit(x =>
             h.Password(rabbitPass);
         });
 
-        cfg.Publish<ChatMessageEvent>(publish =>
+        cfg.Message<ChatMessagePublishedEvent>(message =>
+        {
+            message.SetEntityName("chat_events");
+        });
+
+        cfg.Publish<ChatMessagePublishedEvent>(publish =>
         {
             publish.ExchangeType = ExchangeType.Topic;
         });

@@ -1,4 +1,5 @@
-using Chat.Contracts.Events;
+using EVA_ECS.Chat.Contracts.Events;
+using EVA_ECS.Chat.Contracts.Requests;
 using MassTransit;
 
 namespace Gateway.Services;
@@ -12,19 +13,29 @@ public class ChatManagerService : IChatManagerService
         _publishEndpoint = publishEndpoint;
     }
 
-    public async Task ProcessAndSendAsync(string senderId, string targetId, string text)
+    public async Task ProcessAndSendAsync(
+        string senderId,
+        SendMessageRequest request,
+        CancellationToken cancellationToken = default)
     {
-        var chatEvent = new ChatMessageEvent(
-            Guid.NewGuid().ToString(),
-            senderId,
-            targetId,
-            text,
-            DateTime.UtcNow
-        );
+        if (!Guid.TryParse(senderId, out var authenticatedSenderId))
+        {
+            throw new InvalidOperationException("Authenticated sender ID is not a UUID.");
+        }
+
+        var chatEvent = new ChatMessagePublishedEvent
+        {
+            MessageId = request.MessageId,
+            RoomId = request.RoomId,
+            SenderId = authenticatedSenderId,
+            TargetId = request.TargetId,
+            Timestamp = request.Timestamp,
+            Payload = request.Payload
+        };
 
         await _publishEndpoint.Publish(chatEvent, context =>
         {
-            context.SetRoutingKey("chat.message.published");
-        });
+            context.SetRoutingKey($"msg.private.{request.TargetId}");
+        }, cancellationToken);
     }
 }

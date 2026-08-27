@@ -9,7 +9,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="EVA_ECS.Chat.Contracts" Version="1.0.0" />
     <PackageReference Include="MassTransit" Version="8.3.6" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.6" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
@@ -18,6 +17,10 @@
     <PackageReference Include="RabbitMQ.Client" Version="7.2.2" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Contracts\EVA-ECS.Chat.Contracts\EVA-ECS.Chat.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

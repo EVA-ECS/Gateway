@@ -1,19 +1,13 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-ARG GITHUB_USER
-ARG GITHUB_TOKEN
+COPY Contracts/EVA-ECS.Chat.Contracts/EVA-ECS.Chat.Contracts.csproj Contracts/EVA-ECS.Chat.Contracts/
+COPY Gateway/Gateway.csproj Gateway/
+RUN dotnet restore Gateway/Gateway.csproj --source https://api.nuget.org/v3/index.json
 
-ENV GITHUB_USER=$GITHUB_USER
-ENV GITHUB_TOKEN=$GITHUB_TOKEN
-
-COPY nuget.config ./
-COPY *.csproj ./
-
-RUN dotnet restore
-
-COPY . .
-RUN dotnet publish -c Release -o /app/publish /p:UseAppHost=false
+COPY Contracts/EVA-ECS.Chat.Contracts/ Contracts/EVA-ECS.Chat.Contracts/
+COPY Gateway/ Gateway/
+RUN dotnet publish Gateway/Gateway.csproj -c Release -o /app/publish --no-restore /p:UseAppHost=false
 
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
 WORKDIR /app

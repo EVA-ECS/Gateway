@@ -11,4 +11,9 @@ public interface IUserPresenceStore
         string userId,
         CancellationToken cancellationToken
     );
+
+    Task SetOfflineAsync(
+        string userId,
+        CancellationToken cancellationToken
+    );
 }

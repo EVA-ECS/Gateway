@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Gateway.Services;
-using Chat.Contracts.Events;
+using EVA_ECS.Chat.Contracts.Requests;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using System.Net.WebSockets;
@@ -15,19 +15,25 @@ public class ChatController : ControllerBase
 {
     private readonly IChatManagerService _chatManagerService;
     private readonly IUserPresenceStore _presenceStore;
+    private readonly IWebSocketConnectionRegistry _connections;
+    private readonly ILogger<ChatController> _logger;
 
     public ChatController(
         IChatManagerService chatManagerService,
-        IUserPresenceStore presenceStore
+        IUserPresenceStore presenceStore,
+        IWebSocketConnectionRegistry connections,
+        ILogger<ChatController> logger
     )
     {
         _chatManagerService = chatManagerService;
         _presenceStore = presenceStore;
+        _connections = connections;
+        _logger = logger;
     }
 
     [HttpPost]
     [Authorize]
-    public async Task<IActionResult> SendMessage([FromBody] ChatMessageRequest request)
+    public async Task<IActionResult> SendMessage([FromBody] SendMessageRequest request)
     {
         var senderId = GetAuthenticatedUserId();
 
@@ -36,10 +42,15 @@ public class ChatController : ControllerBase
             return Unauthorized();
         }
 
+        if (!IsValidMessage(request))
+        {
+            return BadRequest("Invalid encrypted message contract.");
+        }
+
         await _chatManagerService.ProcessAndSendAsync(
             senderId,
-            request.TargetId,
-            request.Text
+            request,
+            HttpContext.RequestAborted
         );
 
         return Ok(new { Status = "Success", Info = "Message successfully sent to RabbitMQ!" });
@@ -67,16 +78,18 @@ public class ChatController : ControllerBase
         using var socket =
             await HttpContext.WebSockets.AcceptWebSocketAsync();
 
-        await _presenceStore.SetOnlineAsync(
-            senderId,
-            HttpContext.RequestAborted
-        );
-
-        Console.WriteLine("Authenticated WebSocket connection accepted.");
-        var buffer = new byte[16 * 1024];
+        _connections.Register(senderId, socket);
 
         try
         {
+            await _presenceStore.SetOnlineAsync(
+                senderId,
+                HttpContext.RequestAborted
+            );
+
+            Console.WriteLine("Authenticated WebSocket connection accepted.");
+            var buffer = new byte[16 * 1024];
+
             while (socket.State == WebSocketState.Open &&
                    !HttpContext.RequestAborted.IsCancellationRequested)
             {
@@ -125,17 +138,15 @@ public class ChatController : ControllerBase
                     continue;
                 }
 
-                if (request is null ||
-                    string.IsNullOrWhiteSpace(request.TargetId) ||
-                    string.IsNullOrWhiteSpace(request.Text))
+                if (request?.Message is null || !IsValidMessage(request.Message))
                 {
                     continue;
                 }
 
                 await _chatManagerService.ProcessAndSendAsync(
                     senderId,
-                    request.TargetId,
-                    request.Text
+                    request.Message,
+                    HttpContext.RequestAborted
                 );
 
                 var acknowledgment = Encoding.UTF8.GetBytes(
@@ -160,7 +171,23 @@ public class ChatController : ControllerBase
         }
         finally
         {
-            // Der kurze Redis-Timeout setzt den Nutzer automatisch offline.
+            if (_connections.Unregister(senderId, socket))
+            {
+                try
+                {
+                    await _presenceStore.SetOfflineAsync(
+                        senderId,
+                        CancellationToken.None);
+                }
+                catch (Exception exception)
+                {
+                    _logger.LogWarning(
+                        exception,
+                        "Could not remove Redis presence for user {UserId}; TTL will expire it.",
+                        senderId);
+                }
+            }
+
             Console.WriteLine("WebSocket connection closed; presence expires automatically.");
         }
     }
@@ -199,7 +226,17 @@ public class ChatController : ControllerBase
         return User.FindFirst(ClaimTypes.NameIdentifier)?.Value
             ?? User.FindFirst("sub")?.Value;
     }
+
+    private static bool IsValidMessage(SendMessageRequest request) =>
+        request.MessageId != Guid.Empty &&
+        request.RoomId != Guid.Empty &&
+        request.TargetId != Guid.Empty &&
+        request.Timestamp > 0 &&
+        request.Payload is not null &&
+        !string.IsNullOrWhiteSpace(request.Payload.EncryptedKey) &&
+        !string.IsNullOrWhiteSpace(request.Payload.Iv) &&
+        !string.IsNullOrWhiteSpace(request.Payload.Ciphertext) &&
+        !string.IsNullOrWhiteSpace(request.Payload.Signature);
 }
 
-public record ChatMessageRequest(string SenderId, string TargetId, string Text);
-public record WebSocketClientMessage(string? Type, string? TargetId, string? Text);
+public record WebSocketClientMessage(string? Type, SendMessageRequest? Message);
