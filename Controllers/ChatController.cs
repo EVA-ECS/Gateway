@@ -153,10 +153,9 @@ public class ChatController : ControllerBase
                     "{\"status\":\"published\"}"
                 );
 
-                await socket.SendAsync(
+                await _connections.SendAsync(
+                    senderId,
                     acknowledgment,
-                    WebSocketMessageType.Text,
-                    true,
                     HttpContext.RequestAborted
                 );
             }

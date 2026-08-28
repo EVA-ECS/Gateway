@@ -46,7 +46,20 @@ public sealed class RedisDeliverySubscriber : BackgroundService
         {
             await foreach (var delivery in queue.WithCancellation(stoppingToken))
             {
-                await ForwardAsync(delivery.Message, stoppingToken);
+                try
+                {
+                    await ForwardAsync(delivery.Message, stoppingToken);
+                }
+                catch (Exception exception) when (
+                    exception is not OperationCanceledException ||
+                    !stoppingToken.IsCancellationRequested)
+                {
+                    // One disconnected socket must not stop delivery for the
+                    // other users connected to this Gateway.
+                    _logger.LogWarning(
+                        exception,
+                        "Could not forward a Redis delivery to its WebSocket.");
+                }
             }
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
