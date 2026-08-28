@@ -15,17 +15,14 @@ public class ChatController : ControllerBase
 {
     private readonly IChatManagerService _chatManagerService;
     private readonly IUserPresenceStore _presenceStore;
-    private readonly ILogger<ChatController> _logger;
 
     public ChatController(
         IChatManagerService chatManagerService,
-        IUserPresenceStore presenceStore,
-        ILogger<ChatController> logger
+        IUserPresenceStore presenceStore
     )
     {
         _chatManagerService = chatManagerService;
         _presenceStore = presenceStore;
-        _logger = logger;
     }
 
     [HttpPost]
@@ -46,45 +43,6 @@ public class ChatController : ControllerBase
         );
 
         return Ok(new { Status = "Success", Info = "Message successfully sent to RabbitMQ!" });
-    }
-
-    [HttpGet("/api/users")]
-    [Authorize]
-    public async Task<IActionResult> GetUsers()
-    {
-        var currentUserId = GetAuthenticatedUserId();
-
-        if (string.IsNullOrWhiteSpace(currentUserId))
-        {
-            return Unauthorized();
-        }
-
-        try
-        {
-            var users = await _presenceStore.GetUsersAsync(
-                currentUserId,
-                HttpContext.RequestAborted
-            );
-
-            return Ok(users);
-        }
-        catch (Exception exception)
-            when (!HttpContext.RequestAborted.IsCancellationRequested)
-        {
-            _logger.LogError(
-                exception,
-                "Die Supabase-Nutzerliste konnte nicht geladen werden."
-            );
-
-            return StatusCode(
-                StatusCodes.Status503ServiceUnavailable,
-                new
-                {
-                    Message =
-                        "Die Nutzerliste ist momentan nicht verfügbar."
-                }
-            );
-        }
     }
 
     [HttpGet("/ws")]
