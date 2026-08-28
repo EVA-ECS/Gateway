@@ -26,7 +26,6 @@ public class ChatManagerService : IChatManagerService
         var chatEvent = new ChatMessagePublishedEvent
         {
             MessageId = request.MessageId,
-            RoomId = request.RoomId,
             SenderId = authenticatedSenderId,
             TargetId = request.TargetId,
             Timestamp = request.Timestamp,

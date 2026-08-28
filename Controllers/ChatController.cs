@@ -228,7 +228,6 @@ public class ChatController : ControllerBase
 
     private static bool IsValidMessage(SendMessageRequest request) =>
         request.MessageId != Guid.Empty &&
-        request.RoomId != Guid.Empty &&
         request.TargetId != Guid.Empty &&
         request.Timestamp > 0 &&
         request.Payload is not null &&
