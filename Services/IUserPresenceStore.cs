@@ -11,15 +11,4 @@ public interface IUserPresenceStore
         string userId,
         CancellationToken cancellationToken
     );
-
-    Task<IReadOnlyList<UserPresence>> GetUsersAsync(
-        string currentUserId,
-        CancellationToken cancellationToken
-    );
 }
-
-public sealed record UserPresence(
-    string UserId,
-    string DisplayName,
-    bool IsOnline
-);

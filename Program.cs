@@ -25,18 +25,8 @@ if (string.IsNullOrWhiteSpace(supabaseUrl))
     );
 }
 
-if (string.IsNullOrWhiteSpace(
-        builder.Configuration["Supabase:SecretKey"]
-    ))
-{
-    throw new InvalidOperationException(
-        "Die Konfiguration Supabase:SecretKey fehlt."
-    );
-}
-
 // 2. Services registrieren
 builder.Services.AddControllers();
-builder.Services.AddHttpClient();
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
