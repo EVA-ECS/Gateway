@@ -166,6 +166,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapReverseProxy();
+app.MapReverseProxy().RequireAuthorization();
 
 app.Run();
