@@ -1,7 +1,23 @@
 {
+    "users": [
+        {
+            "name": "admin",
+            "password": "secret",
+            "tags": "administrator"
+        }
+    ],
     "vhosts": [
         {
             "name": "/"
+        }
+    ],
+    "permissions": [
+        {
+            "user": "admin",
+            "vhost": "/",
+            "configure": ".*",
+            "write": ".*",
+            "read": ".*"
         }
     ],
     "exchanges": [
