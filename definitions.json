@@ -1,0 +1,57 @@
+{
+    "users": [
+        {
+            "name": "admin",
+            "password": "secret",
+            "tags": "administrator"
+        }
+    ],
+    "vhosts": [
+        {
+            "name": "/"
+        }
+    ],
+    "permissions": [
+        {
+            "user": "admin",
+            "vhost": "/",
+            "configure": ".*",
+            "write": ".*",
+            "read": ".*"
+        }
+    ],
+    "exchanges": [
+        {
+            "name": "Chat.Contracts.Events:ChatMessageEvent",
+            "vhost": "/",
+            "type": "fanout",
+            "durable": true
+        }
+    ],
+    "queues": [
+        {
+            "name": "storage.queue",
+            "vhost": "/",
+            "durable": true
+        },
+        {
+            "name": "delivery.queue",
+            "vhost": "/",
+            "durable": true
+        }
+    ],
+    "bindings": [
+        {
+            "source": "Chat.Contracts.Events:ChatMessageEvent",
+            "vhost": "/",
+            "destination": "storage.queue",
+            "destination_type": "queue"
+        },
+        {
+            "source": "Chat.Contracts.Events:ChatMessageEvent",
+            "vhost": "/",
+            "destination": "delivery.queue",
+            "destination_type": "queue"
+        }
+    ]
+}
