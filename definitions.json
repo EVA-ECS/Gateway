@@ -1,4 +1,9 @@
 {
+    "vhosts": [
+        {
+            "name": "/"
+        }
+    ],
     "exchanges": [
         {
             "name": "Chat.Contracts.Events:ChatMessageEvent",
