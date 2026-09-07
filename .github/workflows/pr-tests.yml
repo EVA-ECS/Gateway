@@ -1,0 +1,33 @@
+name: .NET PR Tests
+
+on:
+    pull_request:
+        branches: ["dev"]
+
+jobs:
+    build-and-test:
+        runs-on: ubuntu-latest
+
+        steps:
+            - name: Checkout Code
+              uses: actions/checkout@v4
+
+            - name: Setup .NET 8
+              uses: actions/setup-dotnet@v4
+              with:
+                  dotnet-version: 8.0.x
+
+            - name: Restore dependencies
+              run: dotnet restore
+              env:
+                  GITHUB_USER: ${{ github.actor }}
+                  GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+            - name: Build
+              run: dotnet build --no-restore --configuration Release
+              env:
+                  GITHUB_USER: ${{ github.actor }}
+                  GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
+
+            - name: Test
+              run: dotnet test --no-build --configuration Release --verbosity normal
