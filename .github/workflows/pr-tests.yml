@@ -16,15 +16,18 @@ jobs:
               uses: actions/setup-dotnet@v4
               with:
                   dotnet-version: 8.0.x
-                  source-url: https://nuget.pkg.github.com/EVA-ECS/index.json
-              env:
-                  NUGET_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
             - name: Restore dependencies
               run: dotnet restore
+              env:
+                  GITHUB_USER: ${{ github.actor }}
+                  GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
             - name: Build
               run: dotnet build --no-restore --configuration Release
+              env:
+                  GITHUB_USER: ${{ github.actor }}
+                  GITHUB_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
             - name: Test
               run: dotnet test --no-build --configuration Release --verbosity normal
