@@ -7,9 +7,6 @@ on:
 jobs:
     build-and-test:
         runs-on: ubuntu-latest
-        permissions:
-            contents: read
-            packages: read
 
         steps:
             - name: Checkout Code
@@ -21,10 +18,7 @@ jobs:
                   dotnet-version: 8.0.x
                   source-url: https://nuget.pkg.github.com/EVA-ECS/index.json
               env:
-                  NUGET_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-            - name: Authenticate specific NuGet URL
-              run: dotnet nuget add source "https://nuget.pkg.github.com/EVA-ECS/download/eva_ecs.chat.contracts/index.json" --name "EVA-Chat-Contracts" --username "github-actions" --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text
-              continue-on-error: true
+                  NUGET_AUTH_TOKEN: ${{ secrets.GH_PACKAGES_TOKEN }}
 
             - name: Restore dependencies
               run: dotnet restore
