@@ -1,19 +1,21 @@
+using Gateway.Configuration;
+using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
 namespace Gateway.Services;
 
 public sealed class RedisUserPresenceStore : IUserPresenceStore
 {
-    private static readonly TimeSpan OnlineTtl =
-        TimeSpan.FromSeconds(60); 
-
     private readonly IDatabase _database;
+    private readonly RedisRoutingOptions _options;
 
     public RedisUserPresenceStore(
-        IConnectionMultiplexer redis
+        IConnectionMultiplexer redis,
+        IOptions<RedisRoutingOptions> options
     )
     {
         _database = redis.GetDatabase();
+        _options = options.Value;
     }
 
     public async Task SetOnlineAsync(
@@ -39,12 +41,12 @@ public sealed class RedisUserPresenceStore : IUserPresenceStore
         return _database.StringSetAsync(
             GetOnlineKey(userId),
             "1",
-            OnlineTtl
+            TimeSpan.FromSeconds(_options.PresenceTtlSeconds)
         );
     }
 
-    private static string GetOnlineKey(string userId)
+    private string GetOnlineKey(string userId)
     {
-        return $"eva-chat:online:{userId}";
+        return $"{_options.PresenceKeyPrefix}{userId}";
     }
 }

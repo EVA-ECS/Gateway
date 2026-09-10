@@ -15,14 +15,17 @@ public class ChatController : ControllerBase
 {
     private readonly IChatManagerService _chatManagerService;
     private readonly IUserPresenceStore _presenceStore;
+    private readonly IWebSocketConnectionRegistry _connections;
 
     public ChatController(
         IChatManagerService chatManagerService,
-        IUserPresenceStore presenceStore
+        IUserPresenceStore presenceStore,
+        IWebSocketConnectionRegistry connections
     )
     {
         _chatManagerService = chatManagerService;
         _presenceStore = presenceStore;
+        _connections = connections;
     }
 
     [HttpPost]
@@ -66,6 +69,8 @@ public class ChatController : ControllerBase
 
         using var socket =
             await HttpContext.WebSockets.AcceptWebSocketAsync();
+
+        _connections.Register(senderId, socket);
 
         await _presenceStore.SetOnlineAsync(
             senderId,
@@ -125,27 +130,29 @@ public class ChatController : ControllerBase
                     continue;
                 }
 
+                var targetId = request?.TargetId ?? request?.Message?.TargetId;
+                var text = request?.Text ?? request?.Message?.Payload?.Ciphertext;
+
                 if (request is null ||
-                    string.IsNullOrWhiteSpace(request.TargetId) ||
-                    string.IsNullOrWhiteSpace(request.Text))
+                    string.IsNullOrWhiteSpace(targetId) ||
+                    string.IsNullOrWhiteSpace(text))
                 {
                     continue;
                 }
 
                 await _chatManagerService.ProcessAndSendAsync(
                     senderId,
-                    request.TargetId,
-                    request.Text
+                    targetId,
+                    text
                 );
 
                 var acknowledgment = Encoding.UTF8.GetBytes(
                     "{\"status\":\"published\"}"
                 );
 
-                await socket.SendAsync(
+                await _connections.SendAsync(
+                    senderId,
                     acknowledgment,
-                    WebSocketMessageType.Text,
-                    true,
                     HttpContext.RequestAborted
                 );
             }
@@ -160,6 +167,7 @@ public class ChatController : ControllerBase
         }
         finally
         {
+            _connections.Unregister(senderId, socket);
             // Der kurze Redis-Timeout setzt den Nutzer automatisch offline.
             Console.WriteLine("WebSocket connection closed; presence expires automatically.");
         }
@@ -202,4 +210,23 @@ public class ChatController : ControllerBase
 }
 
 public record ChatMessageRequest(string SenderId, string TargetId, string Text);
-public record WebSocketClientMessage(string? Type, string? TargetId, string? Text);
+public record WebSocketClientMessage(
+    string? Type,
+    string? TargetId,
+    string? Text,
+    WebSocketSendMessage? Message = null
+);
+
+public record WebSocketSendMessage(
+    string? MessageId,
+    string? TargetId,
+    long? Timestamp,
+    WebSocketEncryptedPayload? Payload
+);
+
+public record WebSocketEncryptedPayload(
+    string? EncryptedKey,
+    string? Iv,
+    string? Ciphertext,
+    string? Signature
+);
