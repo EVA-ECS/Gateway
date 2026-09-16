@@ -10,14 +10,21 @@
 
   <ItemGroup>
     <PackageReference Include="EVA_ECS.Chat.Contracts" Version="1.0.0" />
-    <PackageReference Include="MassTransit" Version="8.3.6" />
+    <PackageReference Include="FluentAssertions" Version="8.10.0" />
+    <PackageReference Include="MassTransit" Version="9.2.1" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.6" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="8.0.20" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.20" />
+    <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="RabbitMQ.Client" Version="7.2.2" />
+    <PackageReference Include="StackExchange.Redis" Version="3.1.31" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="Yarp.ReverseProxy" Version="2.3.0" />
+    <Compile Remove="Tests\**" />
+    <Content Remove="Tests\**" />
+    <EmbeddedResource Remove="Tests\**" />
+    <None Remove="Tests\**" />
   </ItemGroup>
 
 </Project>
