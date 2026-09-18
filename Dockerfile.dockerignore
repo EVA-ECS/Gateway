@@ -1,0 +1,13 @@
+**
+!Gateway/
+!Gateway/**
+!Contracts/
+!Contracts/EVA-ECS.Chat.Contracts/
+!Contracts/EVA-ECS.Chat.Contracts/**
+**/bin
+**/obj
+**/.git
+**/.env*
+**/TestResults
+**/Tests
+**/Storage-Service.Tests

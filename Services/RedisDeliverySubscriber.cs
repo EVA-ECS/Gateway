@@ -9,8 +9,6 @@ namespace Gateway.Services;
 
 public sealed class RedisDeliverySubscriber : BackgroundService
 {
-    private const string PlaintextMvpMarker = "plaintext-mvp-not-encrypted";
-
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
 
@@ -97,24 +95,8 @@ public sealed class RedisDeliverySubscriber : BackgroundService
             return;
         }
 
-        var webSocketMessage = new
-        {
-            message.MessageId,
-            message.SenderId,
-            message.TargetId,
-            Timestamp = new DateTimeOffset(
-                message.Timestamp.ToUniversalTime()).ToUnixTimeMilliseconds(),
-            Payload = new
-            {
-                EncryptedKey = PlaintextMvpMarker,
-                Iv = PlaintextMvpMarker,
-                message.Ciphertext,
-                Signature = PlaintextMvpMarker
-            }
-        };
-
         var payload = Encoding.UTF8.GetBytes(
-            JsonSerializer.Serialize(webSocketMessage, JsonOptions));
+            JsonSerializer.Serialize(message, JsonOptions));
         var delivered = await _connections.SendAsync(
             message.TargetId,
             payload,
