@@ -11,14 +11,14 @@ Im einfachen MVP:
 - hört auf `gateway:delivery` und schickt zugestellte Nachrichten an den
   passenden lokalen WebSocket zurück.
 
-Am WebSocket akzeptiert Gateway die verschlüsselte Nachricht unter
-`message.payload.ciphertext`. `ChatMessageEvent.Ciphertext` enthält das vom
+Am WebSocket akzeptiert Gateway die verschlüsselte Nachricht als `text` oder
+unter `message.payload.ciphertext`. `ChatMessageEvent.Ciphertext` enthält das vom
 Browser erzeugte JSON-Envelope; das Gateway entschlüsselt es nicht. Sender und
 Empfänger im Envelope müssen zur angemeldeten Identität und zum Ziel passen.
 Beim Rückweg werden die tatsächlichen Event-Felder weitergegeben, keine
 erfundenen Schlüssel, Signaturen oder IVs.
 
-`chat.message.ack` mit Status `published` bestätigt nur die Veröffentlichung
+Die WebSocket-Antwort mit Status `published` bestätigt nur die Veröffentlichung
 an RabbitMQ, nicht die Speicherung oder den Empfang. `requestId` ordnet die
 Antwort dem Sendeversuch zu; `messageId` ist die serverseitige Nachrichten-ID.
 

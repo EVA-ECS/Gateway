@@ -10,4 +10,5 @@
 **/.env*
 **/TestResults
 **/Tests
+**/IntegrationTests
 **/Storage-Service.Tests
