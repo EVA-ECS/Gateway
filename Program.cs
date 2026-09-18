@@ -1,5 +1,6 @@
 using MassTransit;
 using Gateway.Services;
+using Gateway.Configuration;
 using Microsoft.OpenApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
@@ -27,13 +28,21 @@ if (string.IsNullOrWhiteSpace(supabaseUrl))
 
 // 2. Services registrieren
 builder.Services.AddControllers();
+builder.Services.Configure<MassTransitHostOptions>(options =>
+{
+    options.WaitUntilStarted = true;
+    options.StartTimeout = TimeSpan.FromSeconds(30);
+    options.StopTimeout = TimeSpan.FromSeconds(30);
+});
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
         policy.WithOrigins(
                 "http://localhost:8081",
-                "http://127.0.0.1:8081"
+                "http://127.0.0.1:8081",
+                "http://localhost:18081",
+                "http://127.0.0.1:18081"
             )
             .AllowAnyHeader()
             .AllowAnyMethod();
@@ -41,13 +50,43 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddScoped<IChatManagerService, ChatManagerService>();
 builder.Services.AddScoped<IUserPresenceStore, RedisUserPresenceStore>();
-builder.Services.AddSingleton<IConnectionMultiplexer>(
-    ConnectionMultiplexer.Connect(redisConnectionString)
-);
+builder.Services.AddOptions<RedisRoutingOptions>()
+    .Bind(builder.Configuration.GetSection(RedisRoutingOptions.SectionName))
+    .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString),
+        "Redis:ConnectionString is required.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.PresenceKeyPrefix),
+        "Redis:PresenceKeyPrefix is required.")
+    .Validate(options => options.PresenceTtlSeconds is > 0 and <= 3600,
+        "Redis:PresenceTtlSeconds must be between 1 and 3600.")
+    .Validate(options => !string.IsNullOrWhiteSpace(options.SingleGatewayDeliveryChannel),
+        "Redis:SingleGatewayDeliveryChannel is required.")
+    .ValidateOnStart();
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
+{
+    var options = serviceProvider
+        .GetRequiredService<Microsoft.Extensions.Options.IOptions<RedisRoutingOptions>>()
+        .Value;
+    var configuration = ConfigurationOptions.Parse(options.ConnectionString);
+    configuration.AbortOnConnectFail = false;
+    configuration.ClientName = "gateway";
+    return ConnectionMultiplexer.Connect(configuration);
+});
 builder.Services.AddStackExchangeRedisCache(options =>
 {
     options.Configuration = redisConnectionString;
     options.InstanceName = "eva-chat:";
+});
+builder.Services.AddSingleton<IWebSocketConnectionRegistry, WebSocketConnectionRegistry>();
+builder.Services.AddHostedService<RedisDeliverySubscriber>();
+builder.Services.AddHttpClient<IChatHistoryStore, SupabaseChatHistoryStore>(client =>
+{
+    var publishableKey = builder.Configuration["Supabase:PublishableKey"];
+    if (string.IsNullOrWhiteSpace(publishableKey))
+        throw new InvalidOperationException("Supabase:PublishableKey fehlt für den Verlauf.");
+    client.BaseAddress = new Uri($"{supabaseUrl}/rest/v1/");
+    client.DefaultRequestHeaders.Add("apikey", publishableKey);
+    client.Timeout = TimeSpan.FromSeconds(15);
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
