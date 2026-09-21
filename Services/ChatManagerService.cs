@@ -12,7 +12,8 @@ public class ChatManagerService : IChatManagerService
         _publishEndpoint = publishEndpoint;
     }
 
-    public async Task ProcessAndSendAsync(string senderId, string targetId, string text)
+    public async Task<ChatMessageEvent> ProcessAndSendAsync(
+        string senderId, string targetId, string text, CancellationToken cancellationToken = default)
     {
         var chatEvent = new ChatMessageEvent(
             Guid.NewGuid().ToString(),
@@ -22,9 +23,12 @@ public class ChatManagerService : IChatManagerService
             DateTime.UtcNow
         );
 
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
         await _publishEndpoint.Publish(chatEvent, context =>
         {
             context.SetRoutingKey("chat.message.published");
-        });
+        }, timeout.Token);
+        return chatEvent;
     }
 }

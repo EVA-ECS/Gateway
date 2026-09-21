@@ -2,5 +2,6 @@ namespace Gateway.Services;
 
 public interface IChatManagerService
 {
-    Task ProcessAndSendAsync(string senderId, string targetId, string text);
+    Task<Chat.Contracts.Events.ChatMessageEvent> ProcessAndSendAsync(
+        string senderId, string targetId, string text, CancellationToken cancellationToken = default);
 }
