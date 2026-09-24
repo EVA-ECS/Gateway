@@ -88,8 +88,9 @@ public class ChatController(IChatManagerService chatManager, IUserPresenceStore 
                     // This confirms RabbitMQ publishing, not database storage or recipient display.
                     await ReplyAsync(new { status = "published", requestId = request.RequestId, message.MessageId, message.Timestamp });
                 }
-                catch (Exception) when (!cancellation.IsCancellationRequested && socket.State == WebSocketState.Open)
+                catch (Exception ex) when (!cancellation.IsCancellationRequested && socket.State == WebSocketState.Open)
                 {
+                    Console.WriteLine($"[FATALER WEBSOCKET FEHLER] {ex}");
                     await ReplyAsync(new { status = "error", requestId = request.RequestId,
                         code = "publish_failed", message = "Versand nicht bestätigt. Bitte Verbindung prüfen." });
                 }

@@ -174,10 +174,7 @@ builder.Services.AddMassTransit(x =>
             h.Password(rabbitPass);
         });
 
-        cfg.Publish<ChatMessageEvent>(publish =>
-        {
-            publish.ExchangeType = ExchangeType.Topic;
-        });
+        // Der fehlerhafte Publish-Block wurde hier ersatzlos gelöscht!
 
         cfg.ConfigureEndpoints(context);
     });
