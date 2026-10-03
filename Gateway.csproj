@@ -21,12 +21,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Remove="Tests\**\*.cs" />
-    <Content Remove="Tests\**\*" />
-    <None Remove="Tests\**\*" />
-    <Compile Remove="IntegrationTests\**\*.cs" />
-    <Content Remove="IntegrationTests\**\*" />
-    <None Remove="IntegrationTests\**\*" />
+    <Compile Remove="tests\**\*.cs" />
+    <Content Remove="tests\**\*" />
+    <None Remove="tests\**\*" />
+    <Content Remove="package.json;package-lock.json;.config\**\*" />
+    <None Remove="package.json;package-lock.json;.config\**\*" />
   </ItemGroup>
-
 </Project>

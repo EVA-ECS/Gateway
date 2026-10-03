@@ -55,3 +55,7 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Local unit-test dependencies and generated coverage
+node_modules/
+tests/coverage/

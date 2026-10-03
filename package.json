@@ -1,0 +1,11 @@
+{
+  "name": "eva-gateway-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/run-coverage.cjs",
+    "test:coverage": "npm test",
+    "test:unit": "dotnet test tests/unit/UnitTests.csproj --configuration Release"
+  },
+  "coverageAssembly": "Gateway"
+}

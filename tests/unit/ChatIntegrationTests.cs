@@ -169,6 +169,93 @@ public class ChatIntegrationTests
         Assert.Equal("invalid_message", reply.RootElement.GetProperty("code").GetString());
     }
 
+    [Fact]
+    public async Task HttpSendUsesAuthenticatedSenderAndReturnsPublicationReceipt()
+    {
+        var manager = new Manager((sender, target, text, _) => {
+            Assert.Equal(Alice.ToString(), sender); Assert.Equal(Bob.ToString(), target); Assert.Equal(Encrypted, text);
+            return Task.FromResult(new ChatMessageEvent(MessageId.ToString(), sender, target, text, DateTime.UtcNow));
+        });
+        var controller = Controller(manager, new Socket());
+        var result = Assert.IsType<OkObjectResult>(await controller.SendMessage(new ChatMessageRequest("spoofed", Bob.ToString(), Encrypted, "request")));
+        Assert.Contains(MessageId.ToString(), JsonSerializer.Serialize(result.Value));
+        Assert.IsType<OkObjectResult>(controller.HealthCheck());
+        Assert.IsType<OkObjectResult>(controller.TestAuth());
+        controller.HttpContext.User = new ClaimsPrincipal();
+        Assert.IsType<UnauthorizedResult>(await controller.SendMessage(new ChatMessageRequest(null, Bob.ToString(), Encrypted)));
+    }
+
+    [Theory]
+    [InlineData("target")]
+    [InlineData("empty-target")]
+    [InlineData("self")]
+    [InlineData("blank")]
+    [InlineData("large")]
+    [InlineData("malformed")]
+    [InlineData("missing-field")]
+    [InlineData("wrong-version")]
+    [InlineData("wrong-sender")]
+    [InlineData("wrong-recipient")]
+    [InlineData("empty-key")]
+    [InlineData("wrong-type")]
+    public async Task HttpSendRejectsInvalidEncryptedPayloadBeforePublishing(string reason)
+    {
+        var target = reason switch { "target" => "invalid", "empty-target" => Guid.Empty.ToString(), "self" => Alice.ToString(), _ => Bob.ToString() };
+        var text = reason switch {
+            "blank" => " ", "large" => new string('x', 65537), "malformed" => "{", "missing-field" => "{}",
+            "wrong-version" => Encrypted.Replace("\"version\":1", "\"version\":2"),
+            "wrong-sender" => Encrypted.Replace(Alice.ToString(), Guid.NewGuid().ToString()),
+            "wrong-recipient" => Encrypted.Replace(Bob.ToString(), Guid.NewGuid().ToString()),
+            "empty-key" => Encrypted.Replace("test-iv", ""), "wrong-type" => "[]", _ => Encrypted };
+        var controller = Controller(new Manager((_, _, _, _) => throw new Exception("Must not publish")), new Socket());
+        Assert.IsType<BadRequestObjectResult>(await controller.SendMessage(new ChatMessageRequest(null, target, text)));
+    }
+
+    [Fact]
+    public async Task WebSocketRejectsNonUpgradeAndUnauthenticatedRequests()
+    {
+        var controller = Controller(new Manager((_, _, _, _) => throw new Exception("Must not publish")), new Socket());
+        controller.HttpContext.Features.Set<IHttpWebSocketFeature>(null);
+        await controller.ConnectWebSocket(); Assert.Equal(400, controller.Response.StatusCode);
+        controller.HttpContext.Features.Set<IHttpWebSocketFeature>(new SocketFeature(new Socket()));
+        controller.HttpContext.User = new ClaimsPrincipal();
+        await controller.ConnectWebSocket(); Assert.Equal(401, controller.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task WebSocketHeartbeatAndBadJsonNeverPublish()
+    {
+        var presence = new Moq.Mock<IUserPresenceStore>();
+        var socket = new Socket(["{", "null", "{\"type\":\"presence.heartbeat\"}"]);
+        var controller = Controller(new Manager((_, _, _, _) => throw new Exception("Must not publish")), socket);
+        var custom = new ChatController(new Manager((_, _, _, _) => throw new Exception("Must not publish")), presence.Object, new WebSocketConnectionRegistry()) { ControllerContext = controller.ControllerContext };
+        await custom.ConnectWebSocket();
+        Assert.Equal(2, socket.Sent.Count);
+        Assert.Contains("invalid_json", socket.Sent[0]); Assert.Contains("invalid_message", socket.Sent[1]);
+        presence.Verify(x => x.RefreshAsync(Alice.ToString(), default), Moq.Times.Once);
+    }
+
+    [Theory]
+    [InlineData("Basic token", 401)]
+    [InlineData("Bearer", 401)]
+    [InlineData("Bearer valid", 200)]
+    public async Task HistoryChecksBearerSchemeAndDisablesCaching(string authorization, int status)
+    {
+        var context = Context(); context.Request.Headers.Authorization = authorization;
+        var controller = new ChatHistoryController(Store(new Handler(_ => Response([])))) { ControllerContext = new ControllerContext { HttpContext = context } };
+        var result = await controller.Get(Bob);
+        if (status == 401) Assert.IsType<UnauthorizedResult>(result);
+        else { Assert.IsType<OkObjectResult>(result); Assert.Equal("no-store", context.Response.Headers.CacheControl); }
+    }
+
+    [Fact]
+    public async Task HistoryReturnsBadRequestAndTimeoutInsteadOfEmptyPage()
+    {
+        var controller = new ChatHistoryController(Store(new Handler(_ => throw new TaskCanceledException()))) { ControllerContext = new ControllerContext { HttpContext = Context() } };
+        Assert.Equal(504, Assert.IsType<ObjectResult>(await controller.Get(Bob)).StatusCode);
+        Assert.IsType<BadRequestObjectResult>(await controller.Get(Bob, 0));
+    }
+
     private static ChatController Controller(IChatManagerService manager, Socket socket)
     {
         var context = Context();
