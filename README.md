@@ -44,15 +44,17 @@ Ein neuer WebSocket ersetzt den bisherigen desselben Benutzers mit Close-Code
 Contracts als benachbartes Repository auschecken. Kein privater NuGet-Token nötig:
 
 ```powershell
-dotnet test IntegrationTests/Gateway.IntegrationTests.csproj
+npm test
+# Ohne Coverage:
+npm run test:unit
 # Docker-Build aus dem gemeinsamen Elternordner:
 docker build -f Gateway/Dockerfile -t eva-gateway-review .
 ```
 
-Die ergänzenden 13 Integrationseinheitstests liegen absichtlich unter
-`IntegrationTests`, damit Robins offene Test-PRs ihren Ordner `Tests` behalten.
-Gemeinsame Änderungen an `Gateway.csproj` müssen beim Zusammenführen erhalten
-bleiben. Frontend-Verlauf und Statusanzeige benötigen die passende Frontend-PR.
+Die ursprünglichen 13 Testfälle wurden nach `tests/unit` verschoben und erweitert.
+[Testanleitung und Coverage](tests/README.md) beschreibt die lokalen Befehle,
+den Mindestwert von 80% und die HTML-Berichte. Die Unit-Tests brauchen keine
+laufenden Dienste oder Zugangsdaten.
 
 Der Gateway-Prozess speichert keine Chatnachrichten. Die dauerhafte Speicherung
 erfolgt im Storage Service. Der Redis-Sende-Lock schützt nur einzelne
