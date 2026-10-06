@@ -12,40 +12,72 @@ public sealed class WebSocketConnectionRegistry : IWebSocketConnectionRegistry
         public SemaphoreSlim SendLock { get; } = new(1, 1);
     }
 
-    private readonly ConcurrentDictionary<string, Connection> _connections = new();
+    private readonly ConcurrentDictionary<string, Connection> _connections = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ILogger<WebSocketConnectionRegistry> _logger;
+
+    public WebSocketConnectionRegistry(ILogger<WebSocketConnectionRegistry> logger)
+    {
+        _logger = logger;
+    }
 
     public async Task RegisterAsync(string userId, WebSocket socket, CancellationToken cancellationToken)
     {
         var connection = new Connection(socket);
+        var containerId = Environment.MachineName;
         while (true)
         {
             if (!_connections.TryGetValue(userId, out var previous))
             {
-                if (_connections.TryAdd(userId, connection)) return;
+                if (_connections.TryAdd(userId, connection)) 
+                {
+                    _logger.LogInformation("🔌 [WEBSOCKET] Nutzer {UserId} hat sich FEST mit Gateway {ContainerId} verbunden!", userId, containerId);
+                    return;
+                }
                 continue;
             }
             if (!_connections.TryUpdate(userId, connection, previous)) continue;
+            _logger.LogInformation("🔄 [WEBSOCKET] Nutzer {UserId} hat alte Sitzung überschrieben und klebt nun an Gateway {ContainerId}.", userId, containerId);
             await CloseConnectionAsync(previous, (WebSocketCloseStatus)4001,
                 "Diese Sitzung wurde durch ein anderes Fenster ersetzt.", cancellationToken);
             return;
         }
     }
 
-    public bool Unregister(string userId, WebSocket socket) =>
-        _connections.TryGetValue(userId, out var current) && ReferenceEquals(current.Socket, socket) &&
-        _connections.TryRemove(new KeyValuePair<string, Connection>(userId, current));
+    public bool Unregister(string userId, WebSocket socket) {
+    var success = _connections.TryGetValue(userId, out var current) && ReferenceEquals(current.Socket, socket) &&
+               _connections.TryRemove(new KeyValuePair<string, Connection>(userId, current));
+
+        if (success)
+        {
+            _logger.LogInformation("❌ [WEBSOCKET] Nutzer {UserId} hat Gateway {ContainerId} verlassen.", userId, Environment.MachineName);
+        }
+        return success;
+    }
 
     public async Task<bool> SendAsync(string userId, ReadOnlyMemory<byte> payload,
         CancellationToken cancellationToken, WebSocket? expectedSocket = null)
     {
-        if (!_connections.TryGetValue(userId, out var connection)) return false;
+        _logger.LogInformation("📤 [WEBSOCKET] Versuche Nachricht an Nutzer {UserId} zu senden...", userId);
+
+        if (!_connections.TryGetValue(userId, out var connection)) 
+        {
+            _logger.LogWarning("❌ [WEBSOCKET] Abbruch: Nutzer {UserId} ist auf DIESEM Gateway nicht im Arbeitsspeicher!", userId);
+            return false;
+        }
+
         await connection.SendLock.WaitAsync(cancellationToken);
         try
         {
             if (connection.Socket.State != WebSocketState.Open ||
                 (expectedSocket is not null && !ReferenceEquals(connection.Socket, expectedSocket)) ||
-                !_connections.TryGetValue(userId, out var current) || !ReferenceEquals(current, connection)) return false;
+                !_connections.TryGetValue(userId, out var current) || !ReferenceEquals(current, connection)) 
+            {
+                _logger.LogWarning("❌ [WEBSOCKET] Abbruch: Der Socket von Nutzer {UserId} ist ungültig oder nicht mehr offen!", userId);
+                return false;
+            }
+            
             await connection.Socket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken);
+            _logger.LogInformation("✅ [WEBSOCKET] Nachricht ERFOLGREICH an {UserId} gesendet!", userId);
             return true;
         }
         finally { connection.SendLock.Release(); }

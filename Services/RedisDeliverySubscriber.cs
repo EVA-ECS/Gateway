@@ -74,6 +74,7 @@ public sealed class RedisDeliverySubscriber : BackgroundService
         RedisValue value,
         CancellationToken cancellationToken)
     {
+        _logger.LogInformation("📥 [REDIS] Empfange Nachricht vom Worker zum Weiterleiten: {Payload}", value.ToString());
         ChatMessageEvent? message;
 
         try
