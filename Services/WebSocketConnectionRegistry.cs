@@ -12,7 +12,7 @@ public sealed class WebSocketConnectionRegistry : IWebSocketConnectionRegistry
         public SemaphoreSlim SendLock { get; } = new(1, 1);
     }
 
-    private readonly ConcurrentDictionary<string, Connection> _connections = new();
+    private readonly ConcurrentDictionary<string, Connection> _connections = new(StringComparer.OrdinalIgnoreCase);
     private readonly ILogger<WebSocketConnectionRegistry> _logger;
 
     public WebSocketConnectionRegistry(ILogger<WebSocketConnectionRegistry> logger)
@@ -57,14 +57,27 @@ public sealed class WebSocketConnectionRegistry : IWebSocketConnectionRegistry
     public async Task<bool> SendAsync(string userId, ReadOnlyMemory<byte> payload,
         CancellationToken cancellationToken, WebSocket? expectedSocket = null)
     {
-        if (!_connections.TryGetValue(userId, out var connection)) return false;
+        _logger.LogInformation("📤 [WEBSOCKET] Versuche Nachricht an Nutzer {UserId} zu senden...", userId);
+
+        if (!_connections.TryGetValue(userId, out var connection)) 
+        {
+            _logger.LogWarning("❌ [WEBSOCKET] Abbruch: Nutzer {UserId} ist auf DIESEM Gateway nicht im Arbeitsspeicher!", userId);
+            return false;
+        }
+
         await connection.SendLock.WaitAsync(cancellationToken);
         try
         {
             if (connection.Socket.State != WebSocketState.Open ||
                 (expectedSocket is not null && !ReferenceEquals(connection.Socket, expectedSocket)) ||
-                !_connections.TryGetValue(userId, out var current) || !ReferenceEquals(current, connection)) return false;
+                !_connections.TryGetValue(userId, out var current) || !ReferenceEquals(current, connection)) 
+            {
+                _logger.LogWarning("❌ [WEBSOCKET] Abbruch: Der Socket von Nutzer {UserId} ist ungültig oder nicht mehr offen!", userId);
+                return false;
+            }
+            
             await connection.Socket.SendAsync(payload, WebSocketMessageType.Text, true, cancellationToken);
+            _logger.LogInformation("✅ [WEBSOCKET] Nachricht ERFOLGREICH an {UserId} gesendet!", userId);
             return true;
         }
         finally { connection.SendLock.Release(); }
